@@ -90,7 +90,7 @@ export default function Results({ file, result }: Props) {
                   animation: 'fadeInUp 0.6s ease-out 0.1s backwards',
                 }}
               >
-                📊 Confidence: <span style={{ fontWeight: 700, color: '#1e40af' }}>{pct(result.confidence)}</span>
+                📊 Fluency: <span style={{ fontWeight: 700, color: '#1e40af' }}>{pct(result.fluency_pct / 100)}</span>
               </div>
               <div
                 style={{
@@ -104,12 +104,32 @@ export default function Results({ file, result }: Props) {
               </div>
               <div
                 style={{
+                  marginBottom: 10,
                   fontSize: 15,
                   fontWeight: 500,
                   animation: 'fadeInUp 0.6s ease-out 0.2s backwards',
                 }}
               >
                 ⏱️ Duration: <span style={{ fontWeight: 700, color: '#7c3aed' }}>{result.duration_sec.toFixed(2)}s</span>
+              </div>
+              <div
+                style={{
+                  marginBottom: 10,
+                  fontSize: 15,
+                  fontWeight: 500,
+                  animation: 'fadeInUp 0.6s ease-out 0.25s backwards',
+                }}
+              >
+                🔤 Total syllables: <span style={{ fontWeight: 700, color: '#16a34a' }}>{result.total_syllables}</span>
+              </div>
+              <div
+                style={{
+                  fontSize: 15,
+                  fontWeight: 500,
+                  animation: 'fadeInUp 0.6s ease-out 0.3s backwards',
+                }}
+              >
+                📊 Stuttered syllables: <span style={{ fontWeight: 700, color: '#dc2626' }}>{result.stuttered_syllables}</span> / <span style={{ fontWeight: 700, color: '#16a34a' }}>{result.fluent_syllables} fluent</span>
               </div>
             </div>
           </div>
@@ -155,6 +175,59 @@ export default function Results({ file, result }: Props) {
         <ProbabilityBars probs={result.class_probs} />
       </div>
 
+      {/* Class Durations Card */}
+      <div
+        style={{
+          ...card,
+          animationDelay: '0.15s',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.boxShadow = '0 8px 20px rgba(0, 0, 0, 0.1)'
+          e.currentTarget.style.transform = 'translateY(-2px)'
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.06)'
+          e.currentTarget.style.transform = 'translateY(0)'
+        }}
+      >
+        <h2 style={{ marginTop: 0, fontSize: 18, fontWeight: 700, color: '#1e293b', marginBottom: 20 }}>
+          ⏱️ Time Breakdown by Class
+        </h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 15 }}>
+          {Object.entries(result.class_durations).map(([classLabel, duration], idx) => {
+            const syllables = result.syllable_stats[classLabel] || 0
+            const colors: Record<string, string> = {
+              Fluent: '#16a34a',
+              Repetition: '#f59e0b',
+              Prolongation: '#f59e0b',
+              Block: '#dc2626',
+            }
+            return (
+              <div
+                key={idx}
+                style={{
+                  background: `${colors[classLabel] || '#64748b'}15`,
+                  border: `2px solid ${colors[classLabel] || '#64748b'}`,
+                  borderRadius: 12,
+                  padding: 15,
+                  animation: `fadeInUp 0.6s ease-out ${0.2 + idx * 0.05}s backwards`,
+                }}
+              >
+                <div style={{ fontSize: 14, fontWeight: 600, color: colors[classLabel], marginBottom: 8 }}>
+                  {classLabel}
+                </div>
+                <div style={{ fontSize: 13, color: '#64748b', marginBottom: 6 }}>
+                  ⏱️ {duration.toFixed(2)}s
+                </div>
+                <div style={{ fontSize: 13, color: '#64748b' }}>
+                  🔤 {syllables} syllables
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
       {/* Timeline Card - with better handling for missing data */}
       {result.timeline && result.timeline.length > 0 ? (
         <div
@@ -198,7 +271,7 @@ export default function Results({ file, result }: Props) {
               This can happen if the audio is very short (&lt; 5 seconds) or has unusual characteristics.
             </p>
             <p style={{ margin: '0', fontSize: 14 }}>
-              <strong>✓ The analysis is still accurate:</strong> See Confidence and Stutter percentage above.
+              <strong>✓ The analysis is still accurate:</strong> See Fluency and Stutter percentage above.
             </p>
           </div>
         </div>

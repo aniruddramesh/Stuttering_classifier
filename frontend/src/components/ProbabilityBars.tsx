@@ -4,7 +4,7 @@ type Props = {
   probs: Record<string, number>
 }
 
-const ORDER = ['Fluent', 'Repetition', 'Prolongation', 'Block', 'Interjection']
+const ORDER = ['Fluent', 'Repetition', 'Prolongation', 'Block']
 
 function barColor(label: string, p: number): string {
   if (label === 'Fluent') return '#16a34a'
@@ -21,8 +21,6 @@ function barIcon(label: string): string {
       return '📏'
     case 'Block':
       return '🚫'
-    case 'Interjection':
-      return '💬'
     default:
       return '📊'
   }

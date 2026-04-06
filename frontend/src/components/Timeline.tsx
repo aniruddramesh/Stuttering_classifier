@@ -106,7 +106,7 @@ export default function Timeline({ timeline }: Props) {
                 color: '#334155',
               }}
             >
-              📊 Confidence
+              📊 Fluency
             </th>
           </tr>
         </thead>

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List
 
+import librosa
 import numpy as np
 import torch
 from pydantic import BaseModel, Field
@@ -22,6 +23,7 @@ class WindowResult(BaseModel):
     label: str
     confidence: float
     probs: Dict[str, float]
+    syllables: int = 0  # Number of syllables in this window
 
 
 class InferenceResult(BaseModel):
@@ -29,13 +31,40 @@ class InferenceResult(BaseModel):
     confidence: float
     class_probs: Dict[str, float]
     stutter_pct: float
+    fluency_pct: float  # Same as (100 - stutter_pct) excluding interjections
     duration_sec: float
+    total_syllables: int = 0
+    stuttered_syllables: int = 0
+    fluent_syllables: int = 0
+    syllable_stats: Dict[str, int] = Field(default_factory=dict)  # Syllables per class
+    class_durations: Dict[str, float] = Field(default_factory=dict)  # Time spent in each class
     timeline: List[WindowResult] = Field(default_factory=list)
 
 
 @dataclass
 class _TypeReorder:
     indices: List[int]
+
+
+def _detect_syllables(waveform_np: np.ndarray, sample_rate: int) -> int:
+    """
+    Detect approximate number of syllables using onset detection.
+    Uses librosa's onset strength for finding syllable boundaries.
+    """
+    try:
+        # Compute onset strength from the audio
+        onset_env = librosa.onset.onset_strength(y=waveform_np, sr=sample_rate)
+        
+        # Detect onset times
+        onsets = librosa.onset.onset_detect(onset_envelope=onset_env, sr=sample_rate, units='samples')
+        
+        # Return number of onsets (approximate syllable count)
+        syllable_count = max(1, len(onsets))  # At least 1 syllable per window
+        return syllable_count
+    except Exception:
+        # Fallback: estimate based on duration (4 syllables per second average)
+        duration_sec = len(waveform_np) / sample_rate
+        return max(1, int(duration_sec * 4))
 
 
 class StutterPipeline:
@@ -61,7 +90,6 @@ class StutterPipeline:
             "Repetition": "repetition",
             "Prolongation": "prolongation",
             "Block": "blocking",
-            "Interjection": "interjection",
         }
         indices: List[int] = []
         lower_map = {str(k).lower(): int(v) for k, v in type_map.items()}
@@ -124,9 +152,13 @@ class StutterPipeline:
 
         timeline: List[WindowResult] = []
         combined_list: List[np.ndarray] = []
+        class_durations: Dict[str, float] = {cls: 0.0 for cls in STUTTER_CLASSES}
+        syllable_stats: Dict[str, int] = {cls: 0 for cls in STUTTER_CLASSES}
 
         total = waveform_np.shape[0]
         start = 0
+        window_duration = float(self.window_samples / self.sample_rate)
+        
         while start < total:
             end = start + self.window_samples
             window = waveform_np[start:end]
@@ -137,6 +169,9 @@ class StutterPipeline:
             combined = self._infer_window(window)
             combined_list.append(combined)
 
+            # Detect syllables in this window
+            syllables_in_window = _detect_syllables(window, self.sample_rate)
+
             start_sec = float(start / self.sample_rate)
             end_sec = float(min(end, total) / self.sample_rate)
             pred_idx = int(np.argmax(combined))
@@ -146,6 +181,10 @@ class StutterPipeline:
                 STUTTER_CLASSES[i]: float(combined[i]) for i in range(len(STUTTER_CLASSES))
             }
 
+            # Update class durations and syllable stats
+            class_durations[label] += window_duration
+            syllable_stats[label] += syllables_in_window
+
             timeline.append(
                 WindowResult(
                     start_sec=start_sec,
@@ -153,6 +192,7 @@ class StutterPipeline:
                     label=label,
                     confidence=confidence,
                     probs=probs,
+                    syllables=syllables_in_window,
                 )
             )
 
@@ -161,26 +201,50 @@ class StutterPipeline:
             start += self.stride_samples
 
         mean_probs = np.mean(np.stack(combined_list, axis=0), axis=0)
+        
+        # Calculate stutter_pct (now only 4 classes: Fluent, Repetition, Prolongation, Block)
+        fluent_prob = float(mean_probs[0])
+        stutter_mass = float(np.sum(mean_probs[1:4]))  # Repetition, Prolongation, Block
+        
+        # Normalize probabilities
+        total = fluent_prob + stutter_mass
+        if total > 0:
+            stutter_pct = float((stutter_mass / total) * 100.0)
+            fluency_pct = float((fluent_prob / total) * 100.0)
+        else:
+            stutter_pct = 0.0
+            fluency_pct = 100.0
+        
+        # Determine predicted label
         pred_idx = int(np.argmax(mean_probs))
         predicted_label = STUTTER_CLASSES[pred_idx]
         confidence = float(mean_probs[pred_idx])
-        stutter_pct = float((1.0 - float(mean_probs[0])) * 100.0)
 
         if predicted_label != "Fluent":
             if confidence < MIN_CONFIDENCE or stutter_pct < MIN_STUTTER_PCT:
                 predicted_label = "Fluent"
-                pred_idx = 0
-                confidence = float(mean_probs[0])
+                confidence = fluent_prob
 
         class_probs = {
             STUTTER_CLASSES[i]: float(mean_probs[i]) for i in range(len(STUTTER_CLASSES))
         }
+        
+        # Calculate syllable statistics
+        total_syllables = sum(syllable_stats.values())
+        stuttered_syllables = sum(syllable_stats[cls] for cls in ["Repetition", "Prolongation", "Block"])
+        fluent_syllables = syllable_stats["Fluent"]
 
         return InferenceResult(
             predicted_label=predicted_label,
             confidence=confidence,
             class_probs=class_probs,
             stutter_pct=stutter_pct,
+            fluency_pct=fluency_pct,
             duration_sec=duration_sec,
+            total_syllables=total_syllables,
+            stuttered_syllables=stuttered_syllables,
+            fluent_syllables=fluent_syllables,
+            syllable_stats=syllable_stats,
+            class_durations=class_durations,
             timeline=timeline,
         )

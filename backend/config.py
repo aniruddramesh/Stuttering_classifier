@@ -57,7 +57,6 @@ STUTTER_CLASSES = [
     "Repetition",
     "Prolongation",
     "Block",
-    "Interjection",
 ]
 
 MODEL_PATH: str = "models/best_model.pt"

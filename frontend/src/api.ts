@@ -6,6 +6,7 @@ export interface WindowResult {
   label: string
   confidence: number
   probs: Record<string, number>
+  syllables: number
 }
 
 export interface InferenceResult {
@@ -13,7 +14,13 @@ export interface InferenceResult {
   confidence: number
   class_probs: Record<string, number>
   stutter_pct: number
+  fluency_pct: number
   duration_sec: number
+  total_syllables: number
+  stuttered_syllables: number
+  fluent_syllables: number
+  syllable_stats: Record<string, number>
+  class_durations: Record<string, number>
   timeline: WindowResult[]
 }
 
