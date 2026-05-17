@@ -50,8 +50,14 @@ def _detect_syllables(waveform_np: np.ndarray, sample_rate: int) -> int:
     """
     Detect approximate number of syllables using onset detection.
     Uses librosa's onset strength for finding syllable boundaries.
+    Returns 0 for silent audio.
     """
     try:
+        # Check if audio is silent (very low RMS energy)
+        rms = np.sqrt(np.mean(waveform_np ** 2))
+        if rms < 0.001:  # Threshold for silence
+            return 0
+        
         # Compute onset strength from the audio
         onset_env = librosa.onset.onset_strength(y=waveform_np, sr=sample_rate)
         
@@ -62,6 +68,11 @@ def _detect_syllables(waveform_np: np.ndarray, sample_rate: int) -> int:
         syllable_count = max(1, len(onsets))  # At least 1 syllable per window
         return syllable_count
     except Exception:
+        # Check if audio is silent before fallback
+        rms = np.sqrt(np.mean(waveform_np ** 2))
+        if rms < 0.001:
+            return 0
+        
         # Fallback: estimate based on duration (4 syllables per second average)
         duration_sec = len(waveform_np) / sample_rate
         return max(1, int(duration_sec * 4))
@@ -149,6 +160,25 @@ class StutterPipeline:
             raise ValueError("Empty audio.")
 
         duration_sec = float(waveform_np.shape[0] / self.sample_rate)
+
+        # Check if audio is completely silent
+        rms = np.sqrt(np.mean(waveform_np ** 2))
+        if rms < 0.001:
+            # Return 100% fluent result for silent audio
+            return InferenceResult(
+                predicted_label="Fluent",
+                confidence=1.0,
+                class_probs={cls: (1.0 if cls == "Fluent" else 0.0) for cls in STUTTER_CLASSES},
+                stutter_pct=0.0,
+                fluency_pct=100.0,
+                duration_sec=duration_sec,
+                total_syllables=0,
+                stuttered_syllables=0,
+                fluent_syllables=0,
+                syllable_stats={cls: 0 for cls in STUTTER_CLASSES},
+                class_durations={cls: 0.0 for cls in STUTTER_CLASSES},
+                timeline=[],
+            )
 
         timeline: List[WindowResult] = []
         combined_list: List[np.ndarray] = []
